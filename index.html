@@ -127,15 +127,23 @@ button{font-family:inherit; color:inherit;}
   width:44px; font-size:20px; font-weight:600; cursor:pointer; flex-shrink:0;
 }
 .r-item{
-  display:flex; align-items:center; gap:10px;
+  display:flex; flex-direction:column; gap:9px;
   background:var(--card); border-radius:12px; padding:12px 14px;
   margin-bottom:8px; box-shadow:var(--shadow);
 }
+.r-top{display:flex; align-items:center; gap:10px;}
 .r-item .label{flex:1; font-size:15px;}
 .r-item .del{
   border:none; background:none; color:var(--sub); font-size:18px;
   cursor:pointer; padding:2px 4px;
 }
+.r-days{display:flex; gap:5px;}
+.day-chip{
+  width:32px; height:32px; border-radius:50%;
+  border:1px solid var(--line); background:none; color:var(--sub);
+  font-size:12px; font-weight:700; cursor:pointer; flex-shrink:0;
+}
+.day-chip.on{background:var(--accent); border-color:var(--accent); color:#fff;}
 .r-empty{color:var(--sub); font-size:14px; text-align:center; padding:16px 0 8px; line-height:1.6;}
 .ver{text-align:center; color:var(--sub); font-size:11px; margin-top:16px; letter-spacing:.03em;}
 #storageWarn{
@@ -169,6 +177,10 @@ button{font-family:inherit; color:inherit;}
 .ring-box svg{transform:rotate(-90deg);}
 .ring-track{stroke:var(--ring-track);}
 .ring-bar{stroke:var(--accent); transition:stroke-dashoffset .3s linear;}
+.ring-bar.break{stroke:#C9913D;}
+@media (prefers-color-scheme: dark){ .ring-bar.break{stroke:#D9AE68;} }
+:root[data-theme="dark"] .ring-bar.break{stroke:#D9AE68;}
+:root[data-theme="light"] .ring-bar.break{stroke:#C9913D;}
 .ring-center{
   position:absolute; inset:0; display:flex; flex-direction:column;
   align-items:center; justify-content:center; gap:2px;
@@ -342,7 +354,7 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
       <p class="chart-title">최근 7일 집중 시간</p>
       <div class="bars" id="bars"></div>
     </div>
-    <div class="ver" id="verLine">버전 5</div>
+    <div class="ver" id="verLine">버전 6</div>
   </section>
 </div>
 
@@ -365,7 +377,7 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
     </div>
     <div id="routineList"></div>
     <div class="r-empty" id="routineEmpty">
-      매일 반복하는 일을 여기에 등록해 두면<br>"불러오기" 한 번으로 오늘 할 일에 들어가요.
+      반복하는 일을 여기에 등록해 두면<br>앱을 열 때 오늘 할 일에 자동으로 들어가요.<br>요일 동그라미를 눌러 들어올 요일을 고를 수 있어요.
     </div>
   </div>
 </div>
@@ -522,10 +534,15 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
   document.getElementById("routineAddBtn").addEventListener("click", addRoutine);
   routineInput.addEventListener("keydown", function(e){ if(e.key==="Enter") addRoutine(); });
 
+  // 이 반복 할 일이 오늘 요일에 해당하는지 (요일 지정이 없으면 매일)
+  function isRoutineToday(r){
+    if(!r.days || r.days.length===0 || r.days.length===7) return true;
+    return r.days.indexOf(new Date().getDay()) >= 0;
+  }
   function addRoutine(){
     var t = routineInput.value.trim();
     if(!t) return;
-    state.routines.push({ id:uid(), text:t });
+    state.routines.push({ id:uid(), text:t, days:[0,1,2,3,4,5,6] });
     routineInput.value = "";
     // 등록하는 순간 오늘 목록에도 바로 넣어준다
     if(!isInToday(t)){
@@ -539,19 +556,38 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
     state.routines = state.routines.filter(function(r){ return r.id!==id; });
     save(); renderRoutines(); renderRoutineBar();
   }
+  function toggleRoutineDay(r, d){
+    if(!r.days) r.days = [0,1,2,3,4,5,6];
+    var i = r.days.indexOf(d);
+    if(i >= 0) r.days.splice(i, 1); else r.days.push(d);
+    save(); renderRoutines();
+  }
   function renderRoutines(){
     var list = document.getElementById("routineList");
     list.innerHTML = "";
     state.routines.forEach(function(r){
       var row = document.createElement("div");
       row.className = "r-item";
+      var top = document.createElement("div");
+      top.className = "r-top";
       var lab = document.createElement("div");
       lab.className = "label"; lab.textContent = r.text;
       var del = document.createElement("button");
       del.className = "del"; del.textContent = "×";
       del.setAttribute("aria-label","반복 할 일 삭제");
       del.addEventListener("click", function(){ delRoutine(r.id); });
-      row.appendChild(lab); row.appendChild(del);
+      top.appendChild(lab); top.appendChild(del);
+      var dayRow = document.createElement("div");
+      dayRow.className = "r-days";
+      days.forEach(function(name, d){
+        var chip = document.createElement("button");
+        chip.className = "day-chip" + ((!r.days || r.days.indexOf(d)>=0) ? " on" : "");
+        chip.textContent = name;
+        chip.setAttribute("aria-label", name + "요일 " + ((!r.days || r.days.indexOf(d)>=0) ? "켜짐" : "꺼짐"));
+        chip.addEventListener("click", function(){ toggleRoutineDay(r, d); });
+        dayRow.appendChild(chip);
+      });
+      row.appendChild(top); row.appendChild(dayRow);
       list.appendChild(row);
     });
     document.getElementById("routineEmpty").style.display = state.routines.length ? "none" : "block";
@@ -577,6 +613,7 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
   function loadRoutinesIntoToday(){
     var added = 0;
     state.routines.forEach(function(r){
+      if(!isRoutineToday(r)) return;
       if(!isInToday(r.text)){
         state.todos.push({ id:uid(), text:r.text, done:false, doneAt:null });
         added++;
@@ -587,7 +624,9 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
   }
   document.getElementById("routineLoadBtn").addEventListener("click", function(){
     var added = loadRoutinesIntoToday();
-    toast(added ? "반복 할 일 " + added + "개를 불러왔어요" : "오늘 목록에 이미 다 들어 있어요");
+    var scheduled = state.routines.filter(isRoutineToday).length;
+    toast(added ? "반복 할 일 " + added + "개를 불러왔어요"
+          : (scheduled ? "오늘 목록에 이미 다 들어 있어요" : "오늘 요일에 해당하는 반복 할 일이 없어요"));
   });
   // 앱을 열 때마다 오늘 목록에 빠져 있는 반복 할 일을 자동으로 채워 넣는다
   var loadedDay = null;
@@ -616,19 +655,7 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
 
   var selMin = 25, endAt = null, remainMs = 25*60*1000, running = false, tick = null;
   var focusTaskId = null;
-
-  // 페이지를 새로 열어도 돌아가던 타이머 이어가기
-  if(state.timer && state.timer.endAt){
-    if(state.timer.endAt > Date.now()){
-      selMin = state.timer.min; focusTaskId = state.timer.taskId || null;
-      endAt = state.timer.endAt; running = true;
-      markPreset();
-      startTicking();
-    } else {
-      finishSession(state.timer.min, state.timer.taskId, state.timer.endAt);
-      state.timer = null; save();
-    }
-  }
+  var mode = "focus", BREAK_MIN = 5;
 
   document.getElementById("presets").addEventListener("click", function(e){
     var b = e.target.closest(".preset");
@@ -646,7 +673,9 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
   var startBtn = document.getElementById("startBtn");
   var resetBtn = document.getElementById("resetBtn");
   startBtn.addEventListener("click", function(){
-    if(running){ pauseTimer(); } else { startTimer(); }
+    if(mode === "break"){ endBreak(false); }
+    else if(running){ pauseTimer(); }
+    else { startTimer(); }
   });
   resetBtn.addEventListener("click", resetTimer);
 
@@ -671,16 +700,54 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
     paint();
     if(remainMs <= 0){
       clearInterval(tick); tick = null; running = false;
-      finishSession(selMin, focusTaskId, Date.now());
-      state.timer = null;
-      remainMs = selMin*60*1000;
-      save(); paint();
-      startBtn.textContent = "시작";
-      resetBtn.disabled = true;
-      document.getElementById("timeState").textContent = "완료! 잘하셨어요";
-      alarm();
-      releaseWake();
+      if(mode === "focus"){
+        finishSession(selMin, focusTaskId, Date.now());
+        alarm(false);
+        startBreak();   // 집중이 끝나면 5분 휴식이 자동으로 이어진다
+      } else {
+        endBreak(true);
+      }
     }
+  }
+  function startBreak(){
+    mode = "break";
+    remainMs = BREAK_MIN*60*1000;
+    endAt = Date.now() + remainMs;
+    running = true;
+    state.timer = { endAt:endAt, min:BREAK_MIN, mode:"break" };
+    save();
+    ringBar.classList.add("break");
+    startBtn.textContent = "휴식 건너뛰기";
+    resetBtn.disabled = true;
+    document.getElementById("timeState").textContent = "잘하셨어요! 휴식 중 ☕";
+    tick = setInterval(onTick, 250);
+    paint();
+  }
+  function resumeBreak(savedEndAt){
+    mode = "break";
+    endAt = savedEndAt;
+    running = true;
+    requestWake();
+    ringBar.classList.add("break");
+    startBtn.textContent = "휴식 건너뛰기";
+    resetBtn.disabled = true;
+    document.getElementById("timeState").textContent = "휴식 중 ☕";
+    tick = setInterval(onTick, 250);
+    onTick();
+  }
+  function endBreak(finished){
+    clearInterval(tick); tick = null; running = false;
+    mode = "focus";
+    state.timer = null; save();
+    ringBar.classList.remove("break");
+    remainMs = selMin*60*1000;
+    paint();
+    startBtn.textContent = "시작";
+    resetBtn.disabled = true;
+    document.getElementById("timeState").textContent =
+      finished ? "휴식 끝! 다시 집중해 볼까요" : "준비됨";
+    if(finished) alarm(true);
+    releaseWake();
   }
   function pauseTimer(){
     clearInterval(tick); tick = null; running = false;
@@ -692,6 +759,7 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
   }
   function resetTimer(){
     clearInterval(tick); tick = null; running = false;
+    mode = "focus"; ringBar.classList.remove("break");
     releaseWake();
     state.timer = null; save();
     remainMs = selMin*60*1000;
@@ -705,7 +773,7 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
     var m = Math.floor(s/60), r = s%60;
     document.getElementById("timeBig").textContent =
       String(m).padStart(2,"0") + ":" + String(r).padStart(2,"0");
-    var total = selMin*60*1000;
+    var total = (mode==="break" ? BREAK_MIN : selMin)*60*1000;
     ringBar.style.strokeDashoffset = CIRC * (1 - remainMs/total);
     renderTodayLine();
   }
@@ -727,13 +795,14 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
       s.buffer = b; s.connect(audioCtx.destination); s.start(0);
     }catch(e){}
   }
-  function alarm(){
+  function alarm(short){
     try{
       if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
       if(audioCtx.state === "suspended") audioCtx.resume();
       var t0 = audioCtx.currentTime;
-      // 삐-삐-삐 3번씩 3묶음, 약 4초간 울리는 알람
-      for(var g=0; g<3; g++){
+      // 삐-삐-삐 3번씩 3묶음(휴식 끝은 1묶음만), 울리는 알람
+      var groups = short ? 1 : 3;
+      for(var g=0; g<groups; g++){
         for(var i=0; i<3; i++){
           var d = g*1.35 + i*0.28;
           var o = audioCtx.createOscillator(), gn = audioCtx.createGain();
@@ -845,9 +914,9 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
   if(storageOk){
     if(!state.firstSeen){ state.firstSeen = todayKey(); save(); }
     document.getElementById("verLine").textContent =
-      "버전 5 · " + state.firstSeen + "부터 이 기기에 저장 중";
+      "버전 6 · " + state.firstSeen + "부터 이 기기에 저장 중";
   } else {
-    document.getElementById("verLine").textContent = "버전 5 · 저장 안 되는 환경";
+    document.getElementById("verLine").textContent = "버전 6 · 저장 안 되는 환경";
   }
 
   renderTodos();
@@ -856,5 +925,33 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
   renderTodayLine();
   paint();
   autoLoadRoutines(true);
+
+  // 앱을 새로 열어도 돌아가던 타이머(집중/휴식) 이어가기
+  // (화면 요소가 모두 준비된 뒤 맨 마지막에 실행해야 안전하다)
+  try{
+    if(state.timer && state.timer.endAt){
+      if(state.timer.mode === "break"){
+        if(state.timer.endAt > Date.now()){
+          resumeBreak(state.timer.endAt);
+        } else {
+          state.timer = null; save();
+        }
+      } else if(state.timer.endAt > Date.now()){
+        selMin = state.timer.min; focusTaskId = state.timer.taskId || null;
+        endAt = state.timer.endAt; running = true;
+        markPreset();
+        renderFocusTask();
+        startTicking();
+        paint();
+      } else {
+        finishSession(state.timer.min, state.timer.taskId, state.timer.endAt);
+        state.timer = null; save();
+        renderTodayLine();
+      }
+    }
+  }catch(e){
+    // 이어가기에 실패해도 앱의 나머지 기능은 정상 동작해야 한다
+    state.timer = null; save();
+  }
 })();
 </script>
