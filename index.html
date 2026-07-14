@@ -146,6 +146,15 @@ button{font-family:inherit; color:inherit;}
 .day-chip.on{background:var(--accent); border-color:var(--accent); color:#fff;}
 .r-empty{color:var(--sub); font-size:14px; text-align:center; padding:16px 0 8px; line-height:1.6;}
 .ver{text-align:center; color:var(--sub); font-size:11px; margin-top:16px; letter-spacing:.03em;}
+.h-day{padding:10px 0 4px; border-top:1px solid var(--line);}
+.h-day:first-child{border-top:none; padding-top:2px;}
+.h-date{font-size:13px; font-weight:800; margin-bottom:7px;}
+.h-date .h-sum{font-weight:400; color:var(--sub); font-size:12px; margin-left:6px;}
+.h-item{display:flex; align-items:flex-start; gap:8px; font-size:14px; line-height:1.5; padding:2px 0; word-break:keep-all;}
+.h-item .h-mark{flex-shrink:0; width:18px; text-align:center;}
+.h-item.h-done{color:var(--sub);}
+.h-item.h-done .h-mark{color:var(--accent);}
+.h-item.h-undone .h-mark{color:var(--danger);}
 #storageWarn{
   display:none; background:#FBEAE5; color:#8A3B24;
   border:1px solid #E8C4B8; border-radius:14px;
@@ -354,7 +363,12 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
       <p class="chart-title">최근 7일 집중 시간</p>
       <div class="bars" id="bars"></div>
     </div>
-    <div class="ver" id="verLine">버전 6</div>
+    <div class="chart-card" style="margin-top:12px;">
+      <p class="chart-title">날짜별 할 일 기록</p>
+      <div id="historyList"></div>
+      <div class="r-empty" id="historyEmpty">아직 기록이 없어요.<br>할 일을 완료하면 여기에 날짜별로 쌓여요.</div>
+    </div>
+    <div class="ver" id="verLine">버전 7</div>
   </section>
 </div>
 
@@ -415,6 +429,10 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
     return { todos: [], sessions: [], timer: null };
   }
   if(!state.routines) state.routines = [];
+  // 예전 데이터에 만든 날짜가 없으면 채워 넣는다 (날짜별 기록용)
+  state.todos.forEach(function(t){
+    if(!t.createdAt) t.createdAt = t.doneAt || Date.now();
+  });
 
   // 저장이 되는 환경인지 스스로 점검해서, 안 되면 경고 배너를 보여준다
   var storageOk = false;
@@ -469,7 +487,7 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
   function addTodo(){
     var t = input.value.trim();
     if(!t) return;
-    state.todos.unshift({ id:uid(), text:t, done:false, doneAt:null });
+    state.todos.unshift({ id:uid(), text:t, done:false, doneAt:null, createdAt:Date.now() });
     input.value = "";
     save(); renderTodos();
   }
@@ -513,13 +531,17 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
     var act = document.getElementById("activeList");
     var don = document.getElementById("doneList");
     act.innerHTML = ""; don.innerHTML = "";
+    var dayStart = new Date(); dayStart.setHours(0,0,0,0);
     var a = state.todos.filter(function(t){ return !t.done; });
-    var d = state.todos.filter(function(t){ return t.done; });
+    // 끝낸 일은 "오늘 끝낸 것"만 보여준다 (지난 것은 기록 탭에서)
+    var d = state.todos.filter(function(t){
+      return t.done && t.doneAt && t.doneAt >= dayStart.getTime();
+    });
     a.forEach(function(t){ act.appendChild(todoRow(t)); });
     d.forEach(function(t){ don.appendChild(todoRow(t)); });
     document.getElementById("doneWrap").style.display = d.length ? "block" : "none";
-    document.getElementById("doneLabel").textContent = "끝낸 일 " + d.length + "개";
-    document.getElementById("todoEmpty").style.display = state.todos.length ? "none" : "block";
+    document.getElementById("doneLabel").textContent = "오늘 끝낸 일 " + d.length + "개";
+    document.getElementById("todoEmpty").style.display = (a.length || d.length) ? "none" : "block";
   }
 
   /* ---------- 반복 할 일 ---------- */
@@ -546,7 +568,7 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
     routineInput.value = "";
     // 등록하는 순간 오늘 목록에도 바로 넣어준다
     if(!isInToday(t)){
-      state.todos.push({ id:uid(), text:t, done:false, doneAt:null });
+      state.todos.push({ id:uid(), text:t, done:false, doneAt:null, createdAt:Date.now() });
       renderTodos();
       toast("등록하고 오늘 할 일에도 넣었어요");
     }
@@ -615,7 +637,7 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
     state.routines.forEach(function(r){
       if(!isRoutineToday(r)) return;
       if(!isInToday(r.text)){
-        state.todos.push({ id:uid(), text:r.text, done:false, doneAt:null });
+        state.todos.push({ id:uid(), text:r.text, done:false, doneAt:null, createdAt:Date.now() });
         added++;
       }
     });
@@ -900,6 +922,57 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
       col.appendChild(mn); col.appendChild(bar); col.appendChild(dy);
       bars.appendChild(col);
     });
+    renderHistory();
+  }
+
+  // 날짜별로 완료/미완료 할 일 보여주기 (최근 14일)
+  function renderHistory(){
+    var wrap = document.getElementById("historyList");
+    wrap.innerHTML = "";
+    var any = false;
+    for(var i=0; i<14; i++){
+      var d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-i);
+      var dayStart = d.getTime(), dayEnd = dayStart + 24*60*60*1000;
+      var doneItems = state.todos.filter(function(t){
+        return t.done && t.doneAt && t.doneAt >= dayStart && t.doneAt < dayEnd;
+      });
+      // 그날 목록에 있었는데 그날 안에 끝내지 못한 일
+      var undoneItems = state.todos.filter(function(t){
+        if((t.createdAt || 0) >= dayEnd) return false;   // 그날엔 아직 없던 일
+        if(!t.done) return true;                          // 지금도 안 끝난 일
+        return t.doneAt >= dayEnd;                        // 그날 이후에야 끝낸 일
+      });
+      if(!doneItems.length && !undoneItems.length) continue;
+      any = true;
+      var box = document.createElement("div");
+      box.className = "h-day";
+      var head = document.createElement("div");
+      head.className = "h-date";
+      head.textContent = (i===0 ? "오늘" : (d.getMonth()+1) + "월 " + d.getDate() + "일 " + days[d.getDay()] + "요일");
+      var sum = document.createElement("span");
+      sum.className = "h-sum";
+      sum.textContent = "완료 " + doneItems.length + " · 미완료 " + undoneItems.length;
+      head.appendChild(sum);
+      box.appendChild(head);
+      doneItems.forEach(function(t){
+        var row = document.createElement("div");
+        row.className = "h-item h-done";
+        row.innerHTML = '<span class="h-mark">✓</span>';
+        var tx = document.createElement("span"); tx.textContent = t.text;
+        row.appendChild(tx);
+        box.appendChild(row);
+      });
+      undoneItems.forEach(function(t){
+        var row = document.createElement("div");
+        row.className = "h-item h-undone";
+        row.innerHTML = '<span class="h-mark">○</span>';
+        var tx = document.createElement("span"); tx.textContent = t.text;
+        row.appendChild(tx);
+        box.appendChild(row);
+      });
+      wrap.appendChild(box);
+    }
+    document.getElementById("historyEmpty").style.display = any ? "none" : "block";
   }
 
   // 앱을 닫지 않고 다음 날 다시 열었을 때도 자동 불러오기 + 화면 꺼짐 방지 다시 걸기
@@ -914,9 +987,9 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
   if(storageOk){
     if(!state.firstSeen){ state.firstSeen = todayKey(); save(); }
     document.getElementById("verLine").textContent =
-      "버전 6 · " + state.firstSeen + "부터 이 기기에 저장 중";
+      "버전 7 · " + state.firstSeen + "부터 이 기기에 저장 중";
   } else {
-    document.getElementById("verLine").textContent = "버전 6 · 저장 안 되는 환경";
+    document.getElementById("verLine").textContent = "버전 7 · 저장 안 되는 환경";
   }
 
   renderTodos();
