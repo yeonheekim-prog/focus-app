@@ -133,6 +133,14 @@ button{font-family:inherit; color:inherit;}
 }
 .r-top{display:flex; align-items:center; gap:10px;}
 .r-item .label{flex:1; font-size:15px;}
+.r-item .handle{
+  width:32px; height:32px; margin:-6px -4px -6px -8px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  color:var(--sub); font-size:20px; cursor:grab; touch-action:none;
+  -webkit-user-select:none; user-select:none;
+}
+.r-item.dragging{opacity:.85; box-shadow:0 6px 18px rgba(0,0,0,.18); transform:scale(1.02);}
+.r-item.dragging .handle{cursor:grabbing;}
 .r-item .del{
   border:none; background:none; color:var(--sub); font-size:18px;
   cursor:pointer; padding:2px 4px;
@@ -368,7 +376,7 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
       <div id="historyList"></div>
       <div class="r-empty" id="historyEmpty">아직 기록이 없어요.<br>할 일을 완료하면 여기에 날짜별로 쌓여요.</div>
     </div>
-    <div class="ver" id="verLine">버전 7</div>
+    <div class="ver" id="verLine">버전 8</div>
   </section>
 </div>
 
@@ -391,7 +399,7 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
     </div>
     <div id="routineList"></div>
     <div class="r-empty" id="routineEmpty">
-      반복하는 일을 여기에 등록해 두면<br>앱을 열 때 오늘 할 일에 자동으로 들어가요.<br>요일 동그라미를 눌러 들어올 요일을 고를 수 있어요.
+      반복하는 일을 여기에 등록해 두면<br>앱을 열 때 오늘 할 일에 자동으로 들어가요.<br>요일 동그라미를 눌러 들어올 요일을 고를 수 있어요.<br>왼쪽 ≡를 끌면 순서를 바꿀 수 있어요.
     </div>
   </div>
 </div>
@@ -590,8 +598,14 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
     state.routines.forEach(function(r){
       var row = document.createElement("div");
       row.className = "r-item";
+      row.dataset.id = r.id;
       var top = document.createElement("div");
       top.className = "r-top";
+      var handle = document.createElement("div");
+      handle.className = "handle"; handle.textContent = "≡";
+      handle.setAttribute("aria-label","끌어서 순서 바꾸기");
+      handle.addEventListener("pointerdown", function(e){ startRoutineDrag(e, row, handle); });
+      top.appendChild(handle);
       var lab = document.createElement("div");
       lab.className = "label"; lab.textContent = r.text;
       var del = document.createElement("button");
@@ -613,6 +627,39 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
       list.appendChild(row);
     });
     document.getElementById("routineEmpty").style.display = state.routines.length ? "none" : "block";
+  }
+  // ≡ 손잡이를 누른 채 위아래로 끌면 순서가 바뀌고, 손을 떼면 저장한다
+  function startRoutineDrag(e, row, handle){
+    e.preventDefault();
+    var list = row.parentNode;
+    try{ handle.setPointerCapture(e.pointerId); }catch(err){}
+    row.classList.add("dragging");
+    function onMove(ev){
+      var y = ev.clientY;
+      var prev = row.previousElementSibling, next = row.nextElementSibling;
+      if(prev){
+        var pr = prev.getBoundingClientRect();
+        if(y < pr.top + pr.height/2){ list.insertBefore(row, prev); return; }
+      }
+      if(next){
+        var nr = next.getBoundingClientRect();
+        if(y > nr.top + nr.height/2){ list.insertBefore(next, row); }
+      }
+    }
+    function onEnd(){
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onEnd);
+      handle.removeEventListener("pointercancel", onEnd);
+      row.classList.remove("dragging");
+      var byId = {};
+      state.routines.forEach(function(r){ byId[r.id] = r; });
+      var order = Array.prototype.map.call(list.children, function(el){ return byId[el.dataset.id]; })
+                    .filter(Boolean);
+      if(order.length === state.routines.length){ state.routines = order; save(); }
+    }
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onEnd);
+    handle.addEventListener("pointercancel", onEnd);
   }
   function renderRoutineBar(){
     var sub = document.getElementById("routineInfoSub");
@@ -987,9 +1034,9 @@ nav button:focus-visible, .todo .check:focus-visible, button:focus-visible{
   if(storageOk){
     if(!state.firstSeen){ state.firstSeen = todayKey(); save(); }
     document.getElementById("verLine").textContent =
-      "버전 7 · " + state.firstSeen + "부터 이 기기에 저장 중";
+      "버전 8 · " + state.firstSeen + "부터 이 기기에 저장 중";
   } else {
-    document.getElementById("verLine").textContent = "버전 7 · 저장 안 되는 환경";
+    document.getElementById("verLine").textContent = "버전 8 · 저장 안 되는 환경";
   }
 
   renderTodos();
